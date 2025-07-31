@@ -1,0 +1,26 @@
+model Form {
+  id            String   @id
+  nome          String
+  descricao     String?
+  schema_version Int
+  is_ativo      Boolean
+  data_criacao  DateTime
+  data_remocao  DateTime?
+  usuario_remocao String?
+  protegido     Boolean
+  campos        Json
+  responses     Response[]
+}
+
+model Response {
+  id            String   @id
+  formId        String
+  schema_version Int
+  respostas     Json
+  calculados    Json
+  criado_em     DateTime
+  is_ativo      Boolean
+  data_remocao  DateTime?
+  usuario_remocao String?
+  form          Form     @relation(fields: [formId], references: [id])
+}
