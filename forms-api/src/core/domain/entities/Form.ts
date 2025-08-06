@@ -5,7 +5,11 @@ export interface Field {
   tipo: "text" | "number" | "boolean" | "select" | "date" | "calculated";
   obrigatorio?: boolean;
   condicional?: string;
-  validacoes?: Array<{ tipo: string; valor?: any; mensagem?: string }>;
+  validacoes?: Array<{
+    tipo: string;
+    valor?: string | number | RegExp;
+    mensagem?: string;
+  }>;
   formula?: string;
   dependencias?: string[];
   precisao?: number;

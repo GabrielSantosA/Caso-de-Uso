@@ -1,13 +1,61 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PrismaClient } from "@prisma/client";
-import { Form, Response } from "../../Form";
-import { FormRepository } from "../../ports/FormRepository";
+import { Field, Form, Response } from "../../../domain/entities/Form";
+import { FormRepository } from "../../../domain/ports/FormRepository";
 
 export class FormRepositoryPrisma implements FormRepository {
   constructor(private prisma: PrismaClient) {}
 
+  private convertPrismaFormToForm(prismaForm: any): Form {
+    return {
+      ...prismaForm,
+      descricao: prismaForm.descricao ?? undefined,
+      data_remocao: prismaForm.data_remocao ?? undefined,
+      usuario_remocao: prismaForm.usuario_remocao ?? undefined,
+      campos: prismaForm.campos as Field[],
+    };
+  }
+
+  private convertPrismaResponseToResponse(prismaResponse: any): Response {
+    return {
+      ...prismaResponse,
+      data_remocao: prismaResponse.data_remocao ?? undefined,
+      usuario_remocao: prismaResponse.usuario_remocao ?? undefined,
+    };
+  }
+
+  async findAll(): Promise<Form[]> {
+    const forms = await this.prisma.form.findMany({
+      where: { is_ativo: true },
+    });
+    return forms.map(this.convertPrismaFormToForm);
+  }
+
+  async findResponsesByFormId(formId: string): Promise<Response[]> {
+    const responses = await this.prisma.response.findMany({
+      where: {
+        formId,
+        is_ativo: true,
+      },
+    });
+    return responses.map(this.convertPrismaResponseToResponse);
+  }
+
+  async findResponseById(
+    formId: string,
+    responseId: string
+  ): Promise<Response | null> {
+    const response = await this.prisma.response.findUnique({
+      where: {
+        id: responseId,
+        formId,
+      },
+    });
+    return response ? this.convertPrismaResponseToResponse(response) : null;
+  }
+
   async create(form: Form): Promise<Form> {
-    return this.prisma.form.create({
+    const createdForm = await this.prisma.form.create({
       data: {
         id: form.id,
         nome: form.nome,
@@ -19,10 +67,12 @@ export class FormRepositoryPrisma implements FormRepository {
         campos: form.campos as any,
       },
     });
+    return this.convertPrismaFormToForm(createdForm);
   }
 
   async findById(id: string): Promise<Form | null> {
-    return this.prisma.form.findUnique({ where: { id } });
+    const form = await this.prisma.form.findUnique({ where: { id } });
+    return form ? this.convertPrismaFormToForm(form) : null;
   }
 
   async list(params: {
@@ -43,7 +93,8 @@ export class FormRepositoryPrisma implements FormRepository {
       ordenarPor,
       ordem,
     } = params;
-    return this.prisma.form.findMany({
+
+    const forms = await this.prisma.form.findMany({
       where: {
         nome: nome ? { contains: nome, mode: "insensitive" } : undefined,
         schema_version,
@@ -53,6 +104,7 @@ export class FormRepositoryPrisma implements FormRepository {
       take: pageSize,
       orderBy: ordenarPor ? { [ordenarPor]: ordem || "asc" } : undefined,
     });
+    return forms.map(this.convertPrismaFormToForm);
   }
 
   async softDelete(id: string, user: string): Promise<void> {
@@ -67,7 +119,7 @@ export class FormRepositoryPrisma implements FormRepository {
   }
 
   async updateSchema(id: string, form: Partial<Form>): Promise<Form> {
-    return this.prisma.form.update({
+    const updatedForm = await this.prisma.form.update({
       where: { id },
       data: {
         nome: form.nome,
@@ -76,10 +128,11 @@ export class FormRepositoryPrisma implements FormRepository {
         campos: form.campos as any,
       },
     });
+    return this.convertPrismaFormToForm(updatedForm);
   }
 
   async saveResponse(formId: string, response: Response): Promise<Response> {
-    return this.prisma.response.create({
+    const createdResponse = await this.prisma.response.create({
       data: {
         id: response.id,
         formId,
@@ -90,22 +143,28 @@ export class FormRepositoryPrisma implements FormRepository {
         is_ativo: response.is_ativo,
       },
     });
+    return this.convertPrismaResponseToResponse(createdResponse);
   }
 
   async listResponses(
     formId: string,
-    params: { page: number; pageSize: number; filters?: any }
+    params: {
+      page: number;
+      pageSize: number;
+      filters?: Record<string, unknown>;
+    }
   ): Promise<Response[]> {
     const { page, pageSize, filters } = params;
-    return this.prisma.response.findMany({
+    const responses = await this.prisma.response.findMany({
       where: {
         formId,
-        schema_version: filters?.schema_version,
+        schema_version: filters?.schema_version as number | undefined,
         is_ativo: filters?.incluir_calculados ? undefined : true,
       },
       skip: (page - 1) * pageSize,
       take: pageSize,
     });
+    return responses.map(this.convertPrismaResponseToResponse);
   }
 
   async softDeleteResponse(

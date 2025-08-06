@@ -1,7 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Form, Response } from "../Form";
+import { Form, Response } from "../entities/Form";
 
 export interface FormRepository {
+  findAll(): Promise<Form[]>;
+  findResponsesByFormId(formId: string): Promise<Response[]>;
+  findResponseById(
+    formId: string,
+    responseId: string
+  ): Promise<Response | null>;
   create(form: Form): Promise<Form>;
   findById(id: string): Promise<Form | null>;
   list(params: {
@@ -18,7 +24,11 @@ export interface FormRepository {
   saveResponse(formId: string, response: Response): Promise<Response>;
   listResponses(
     formId: string,
-    params: { page: number; pageSize: number; filters?: any }
+    params: {
+      page: number;
+      pageSize: number;
+      filters?: Record<string, unknown>;
+    }
   ): Promise<Response[]>;
   softDeleteResponse(
     formId: string,

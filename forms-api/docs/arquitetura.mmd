@@ -1,0 +1,11 @@
+graph TD
+    A[Frontend] -->|HTTP| B[API REST]
+    B --> C[FormController]
+    C --> D[FormService]
+    D --> E[FormRepository]
+    D --> F[Calculator]
+    D --> G[FieldValidator]
+    E --> H[(PostgreSQL)]
+    F --> I[mathjs]
+    G --> J[Zod]
+    C --> K[Swagger]

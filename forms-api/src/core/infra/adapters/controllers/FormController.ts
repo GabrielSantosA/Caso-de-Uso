@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Request, Response } from "express";
 import { z } from "zod";
-import { FormService } from "../../../app/services/FormService";
+import { FormService } from "../../../app/use-cases/FormService";
 
 export class FormController {
   constructor(private formService: FormService) {}
@@ -109,12 +109,19 @@ export class FormController {
         pagina_atual: pagina,
         total_paginas: Math.ceil(total / tamanho_pagina),
         total_itens: total,
-        formularios: forms.map((form) => ({
-          id: form.id,
-          nome: form.nome,
-          schema_version: form.schema_version,
-          criado_em: form.data_criacao.toISOString(),
-        })),
+        formularios: forms.map(
+          (form: {
+            id: any;
+            nome: any;
+            schema_version: any;
+            data_criacao: { toISOString: () => any };
+          }) => ({
+            id: form.id,
+            nome: form.nome,
+            schema_version: form.schema_version,
+            criado_em: form.data_criacao.toISOString(),
+          })
+        ),
       });
     } catch (error) {
       let errorMessage = "Parâmetros inválidos";
@@ -343,7 +350,7 @@ export class FormController {
     try {
       const { id, pagina, tamanho_pagina, incluir_calculados, schema_version } =
         await schema.parseAsync({ ...req.params, ...req.query });
-      const responses = await this.formService.listFormResponses(id, {
+      const responses = await this.formService.listResponses(id, {
         page: pagina,
         pageSize: tamanho_pagina,
         filters: {
@@ -356,15 +363,23 @@ export class FormController {
         pagina,
         tamanho_pagina,
         total: responses.length,
-        resultados: responses.map((response) => ({
-          id_resposta: response.id,
-          criado_em: response.criado_em.toISOString(),
-          schema_version: response.schema_version,
-          respostas: response.respostas,
-          ...(incluir_calculados === "true" && {
-            calculados: response.calculados,
-          }),
-        })),
+        resultados: responses.map(
+          (response: {
+            id: any;
+            criado_em: { toISOString: () => any };
+            schema_version: any;
+            respostas: any;
+            calculados: any;
+          }) => ({
+            id_resposta: response.id,
+            criado_em: response.criado_em.toISOString(),
+            schema_version: response.schema_version,
+            respostas: response.respostas,
+            ...(incluir_calculados === "true" && {
+              calculados: response.calculados,
+            }),
+          })
+        ),
       });
     } catch (error) {
       let errorMessage = "Parâmetros inválidos";
@@ -394,7 +409,7 @@ export class FormController {
           mensagem: "Este formulário foi desativado e não permite alterações.",
         });
       }
-      const response = await this.formService.listFormResponses(id, {
+      const response = await this.formService.listResponses(id, {
         page: 1,
         pageSize: 1,
         filters: { id: id_resposta },

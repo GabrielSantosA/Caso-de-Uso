@@ -3,13 +3,13 @@ services:
   app:
     build: .
     ports:
-      - "3000:3000"
+      - "3010:3010"
     depends_on:
       - db
     environment:
-      - DATABASE_URL=postgresql://user:password@db:5432/forms
+      - DATABASE_URL=postgresql://postgres:postgres@db:5442/forms
   db:
-    image: postgres:14
+    image: postgres:16-alpine
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
