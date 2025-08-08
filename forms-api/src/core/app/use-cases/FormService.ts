@@ -1,8 +1,8 @@
 import { inject, injectable } from "tsyringe";
 import { createLogger, format, transports } from "winston";
 import { Field, Form, Response } from "../../domain/entities/Form";
+import { FieldValidator } from "../../domain/ports/FieldValidator";
 import { FormRepository } from "../../domain/ports/FormRepository";
-import { ValidatorStrategy } from "../../infra/adapters/validators/Validator";
 import { Calculator } from "../services/Calculator";
 
 const logger = createLogger({
@@ -15,15 +15,14 @@ export class FormService {
   constructor(
     @inject("FormRepository") private formRepository: FormRepository,
     @inject("Calculator") private calculator: Calculator,
-    @inject("FieldValidator")
-    private validators: Record<string, ValidatorStrategy>
+    @inject("FieldValidator") private fieldValidator: FieldValidator
   ) {}
 
-  async createForm(form: Form): Promise<Form> {
-    await this.validateFields(form.campos);
-    this.checkCircularDependencies(form.campos);
+  async criarFormulario(form: Form): Promise<Form> {
+    await this.validarCampos(form.campos);
+    this.verificarDependenciasCirculares(form.campos);
 
-    const newForm = await this.formRepository.create({
+    const novoFormulario = await this.formRepository.create({
       ...form,
       schema_version: 1,
       is_ativo: true,
@@ -33,92 +32,95 @@ export class FormService {
 
     logger.info({
       acao: "criacao_formulario",
-      id: newForm.id,
+      id: novoFormulario.id,
       usuario: "system",
       timestamp: new Date().toISOString(),
     });
-    return newForm;
+    return novoFormulario;
   }
 
-  async updateFormSchema(
+  async atualizarSchemaFormulario(
     id: string,
-    updatedForm: Partial<Form>
+    formularioAtualizado: Partial<Form>
   ): Promise<Form> {
-    const existingForm = await this.formRepository.findById(id);
-    if (!existingForm) throw new Error("Form not found");
-    if (!existingForm.is_ativo) throw new Error("Form is inactive");
+    const formularioExistente = await this.formRepository.findById(id);
+    if (!formularioExistente) throw new Error("Formulário não encontrado");
+    if (!formularioExistente.is_ativo) throw new Error("Formulário inativo");
 
-    await this.validateFields(updatedForm.campos || []);
-    this.checkCircularDependencies(updatedForm.campos || []);
+    await this.validarCampos(formularioAtualizado.campos || []);
+    this.verificarDependenciasCirculares(formularioAtualizado.campos || []);
 
-    const newSchemaVersion = existingForm.schema_version + 1;
+    const novaVersaoSchema = formularioExistente.schema_version + 1;
     if (
-      updatedForm.schema_version &&
-      updatedForm.schema_version <= existingForm.schema_version
+      formularioAtualizado.schema_version &&
+      formularioAtualizado.schema_version <= formularioExistente.schema_version
     ) {
       throw new Error(
-        `Schema version ${updatedForm.schema_version} is not greater than current version ${existingForm.schema_version}`
+        `Versão do schema ${formularioAtualizado.schema_version} não é maior que a versão atual ${formularioExistente.schema_version}`
       );
     }
 
-    const updated = await this.formRepository.updateSchema(id, {
-      ...updatedForm,
-      schema_version: newSchemaVersion,
-      data_criacao: existingForm.data_criacao,
-      is_ativo: existingForm.is_ativo,
-      protegido: existingForm.protegido,
+    const atualizado = await this.formRepository.updateSchema(id, {
+      ...formularioAtualizado,
+      schema_version: novaVersaoSchema,
+      data_criacao: formularioExistente.data_criacao,
+      is_ativo: formularioExistente.is_ativo,
+      protegido: formularioExistente.protegido,
     });
 
     logger.info({
       acao: "atualizacao_schema",
       id,
-      schema_version_anterior: existingForm.schema_version,
-      schema_version_nova: newSchemaVersion,
+      schema_version_anterior: formularioExistente.schema_version,
+      schema_version_nova: novaVersaoSchema,
       usuario: "system",
       timestamp: new Date().toISOString(),
     });
 
-    return updated;
+    return atualizado;
   }
 
-  async submitResponse(
+  async enviarResposta(
     formId: string,
-    response: Record<string, unknown>,
+    respostas: Record<string, unknown>,
     schema_version?: number
   ): Promise<Response> {
-    const form = await this.formRepository.findById(formId);
-    if (!form) throw new Error("Form not found");
-    if (!form.is_ativo) throw new Error("Form is inactive");
+    const formulario = await this.formRepository.findById(formId);
+    if (!formulario) throw new Error("Formulário não encontrado");
+    if (!formulario.is_ativo) throw new Error("Formulário inativo");
 
-    const targetVersion = schema_version || form.schema_version;
-    if (targetVersion !== form.schema_version) {
-      throw new Error("Schema version outdated");
+    const versaoAlvo = schema_version || formulario.schema_version;
+    if (versaoAlvo !== formulario.schema_version) {
+      throw new Error("Versão do schema desatualizada");
     }
 
-    for (const field of form.campos) {
-      if (field.tipo === "calculated") continue;
+    for (const campo of formulario.campos) {
+      if (campo.tipo === "calculated") continue;
       if (
-        field.condicional &&
-        !this.evaluateConditional(field.condicional, response)
+        campo.condicional &&
+        !this.avaliarCondicional(campo.condicional, respostas)
       )
         continue;
-      const validator = this.validators[field.tipo];
-      await validator.validate(response[field.id], field);
+
+      await this.fieldValidator.validate(respostas[campo.id], campo);
     }
 
-    const calculated: Record<string, unknown> = {};
-    for (const field of form.campos.filter(
+    const camposCalculados: Record<string, unknown> = {};
+    for (const campo of formulario.campos.filter(
       (f: { tipo: string }) => f.tipo === "calculated"
     )) {
-      calculated[field.id] = await this.calculator.calculate(field, response);
+      camposCalculados[campo.id] = await this.calculator.calculate(
+        campo,
+        respostas
+      );
     }
 
-    const savedResponse = await this.formRepository.saveResponse(formId, {
+    const respostaSalva = await this.formRepository.saveResponse(formId, {
       id: `resposta_${Date.now()}`,
       formId,
-      respostas: response,
-      calculados: calculated,
-      schema_version: targetVersion,
+      respostas,
+      calculados: camposCalculados,
+      schema_version: versaoAlvo,
       criado_em: new Date(),
       is_ativo: true,
     });
@@ -126,36 +128,45 @@ export class FormService {
     logger.info({
       acao: "submissao_resposta",
       id_formulario: formId,
-      id_resposta: savedResponse.id,
+      id_resposta: respostaSalva.id,
       usuario: "system",
       timestamp: new Date().toISOString(),
     });
 
-    return savedResponse;
+    return respostaSalva;
   }
 
-  async listForms(params: {
+  async listarFormularios(params: {
     nome?: string;
     schema_version?: number;
-    page: number;
-    pageSize: number;
+    pagina: number;
+    tamanho_pagina: number;
     incluirInativos?: boolean;
     ordenarPor?: string;
     ordem?: "asc" | "desc";
   }): Promise<Form[]> {
-    const forms = await this.formRepository.list(params);
+    const formularios = await this.formRepository.list({
+      nome: params.nome,
+      schema_version: params.schema_version,
+      pagina: params.pagina,
+      tamanho_pagina: params.tamanho_pagina,
+      incluirInativos: params.incluirInativos,
+      ordenarPor: params.ordenarPor,
+      ordem: params.ordem,
+    });
+
     logger.info({
       acao: "listagem_formularios",
-      quantidade: forms.length,
+      quantidade: formularios.length,
       usuario: "system",
       timestamp: new Date().toISOString(),
     });
-    return forms;
+    return formularios;
   }
 
-  async getFormById(id: string): Promise<Form | null> {
-    const form = await this.formRepository.findById(id);
-    if (form) {
+  async obterFormularioPorId(id: string): Promise<Form | null> {
+    const formulario = await this.formRepository.findById(id);
+    if (formulario) {
       logger.info({
         acao: "busca_formulario",
         id,
@@ -163,115 +174,126 @@ export class FormService {
         timestamp: new Date().toISOString(),
       });
     }
-    return form;
+    return formulario;
   }
 
-  async softDelete(id: string, user: string): Promise<void> {
-    const existingForm = await this.formRepository.findById(id);
-    if (!existingForm) throw new Error("Form not found");
-    if (!existingForm.is_ativo) throw new Error("Form is inactive");
+  async desativarFormulario(id: string, usuario: string): Promise<void> {
+    const formularioExistente = await this.formRepository.findById(id);
+    if (!formularioExistente) throw new Error("Formulário não encontrado");
+    if (!formularioExistente.is_ativo) throw new Error("Formulário inativo");
 
-    await this.formRepository.softDelete(id, user);
+    await this.formRepository.softDelete(id, usuario);
 
     logger.info({
       acao: "exclusao_logica_formulario",
       id,
-      usuario: user,
+      usuario,
       timestamp: new Date().toISOString(),
     });
   }
 
-  async listResponses(
+  async listarRespostas(
     formId: string,
     params: {
-      page: number;
-      pageSize: number;
-      filters?: Record<string, unknown>;
+      pagina: number;
+      tamanho_pagina: number;
+      filtros?: {
+        id?: string;
+        schema_version?: number;
+        incluir_inativos?: boolean;
+      };
     }
   ): Promise<Response[]> {
-    const responses = await this.formRepository.listResponses(formId, params);
+    const respostas = await this.formRepository.listResponses(formId, {
+      pagina: params.pagina,
+      tamanho_pagina: params.tamanho_pagina,
+      filters: {
+        id: params.filtros?.id,
+        schema_version: params.filtros?.schema_version,
+        incluir_inativos: params.filtros?.incluir_inativos,
+      },
+    });
+
     logger.info({
       acao: "listagem_respostas",
       id_formulario: formId,
-      quantidade: responses.length,
+      quantidade: respostas.length,
       usuario: "system",
       timestamp: new Date().toISOString(),
     });
-    return responses;
+    return respostas;
   }
 
-  async softDeleteResponse(
+  async desativarResposta(
     formId: string,
-    responseId: string,
-    user: string
+    respostaId: string,
+    usuario: string
   ): Promise<void> {
-    const response = await this.formRepository.findResponseById(
+    const resposta = await this.formRepository.findResponseById(
       formId,
-      responseId
+      respostaId
     );
-    if (!response) throw new Error("Response not found");
-    if (!response.is_ativo) throw new Error("Response is inactive");
+    if (!resposta) throw new Error("Resposta não encontrada");
+    if (!resposta.is_ativo) throw new Error("Resposta inativa");
 
-    await this.formRepository.softDeleteResponse(formId, responseId, user);
+    await this.formRepository.softDeleteResponse(formId, respostaId, usuario);
 
     logger.info({
       acao: "exclusao_logica_resposta",
       id_formulario: formId,
-      id_resposta: responseId,
-      usuario: user,
+      id_resposta: respostaId,
+      usuario,
       timestamp: new Date().toISOString(),
     });
   }
 
-  private async validateFields(fields: Field[]): Promise<void> {
-    for (const field of fields) {
-      const validator = this.validators[field.tipo];
-      if (!validator) throw new Error(`No validator for type ${field.tipo}`);
-      await validator.validate(undefined, field);
+  private async validarCampos(campos: Field[]): Promise<void> {
+    for (const campo of campos) {
+      await this.fieldValidator.validate(undefined, campo);
     }
   }
 
-  private evaluateConditional(
-    conditional: string,
-    values: Record<string, unknown>
+  private avaliarCondicional(
+    condicional: string,
+    valores: Record<string, unknown>
   ): boolean {
     try {
-      const [fieldId, expectedValue] = conditional.split("=");
-      if (!fieldId || !expectedValue)
-        throw new Error("Invalid conditional format");
-      const value = values[fieldId];
-      return value === expectedValue;
+      const [campoId, valorEsperado] = condicional.split("=");
+      if (!campoId || !valorEsperado)
+        throw new Error("Formato condicional inválido");
+      const valor = valores[campoId];
+      return valor === valorEsperado;
     } catch (error) {
-      throw new Error(`Invalid conditional expression: ${conditional}`);
+      throw new Error(`Expressão condicional inválida: ${condicional}`);
     }
   }
 
-  private checkCircularDependencies(fields: Field[]): void {
-    const graph = new Map<string, string[]>();
-    fields.forEach((field) => graph.set(field.id, field.dependencias || []));
+  private verificarDependenciasCirculares(campos: Field[]): void {
+    const grafo = new Map<string, string[]>();
+    campos.forEach((campo) => grafo.set(campo.id, campo.dependencias || []));
 
-    const visited = new Set<string>();
-    const recStack = new Set<string>();
+    const visitados = new Set<string>();
+    const pilhaRecursao = new Set<string>();
 
-    const detectCycle = (node: string): void => {
-      visited.add(node);
-      recStack.add(node);
+    const detectarCiclo = (no: string): void => {
+      visitados.add(no);
+      pilhaRecursao.add(no);
 
-      for (const neighbor of graph.get(node) || []) {
-        if (!visited.has(neighbor)) {
-          detectCycle(neighbor);
-        } else if (recStack.has(neighbor)) {
+      for (const vizinho of grafo.get(no) || []) {
+        if (!visitados.has(vizinho)) {
+          detectarCiclo(vizinho);
+        } else if (pilhaRecursao.has(vizinho)) {
           throw new Error(
-            `Circular dependency detected involving field: ${neighbor}`
+            `Dependência circular detectada no campo: ${vizinho}`
           );
         }
       }
 
-      recStack.delete(node);
+      pilhaRecursao.delete(no);
     };
 
-    for (const node of graph.keys()) {
-      if (!visited.has(node)) detectCycle(node);
+    for (const no of grafo.keys()) {
+      if (!visitados.has(no)) detectarCiclo(no);
     }
   }
 }

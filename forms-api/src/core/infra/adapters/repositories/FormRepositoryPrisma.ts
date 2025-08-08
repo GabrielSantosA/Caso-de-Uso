@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PrismaClient } from "@prisma/client";
+import { inject, injectable } from "tsyringe";
 import { Field, Form, Response } from "../../../domain/entities/Form";
 import { FormRepository } from "../../../domain/ports/FormRepository";
 
+@injectable()
 export class FormRepositoryPrisma implements FormRepository {
-  constructor(private prisma: PrismaClient) {}
+  constructor(@inject("PrismaClient") private prisma: PrismaClient) {}
 
   private convertPrismaFormToForm(prismaForm: any): Form {
     return {
@@ -78,8 +80,8 @@ export class FormRepositoryPrisma implements FormRepository {
   async list(params: {
     nome?: string;
     schema_version?: number;
-    page: number;
-    pageSize: number;
+    pagina: number;
+    tamanho_pagina: number;
     incluirInativos?: boolean;
     ordenarPor?: string;
     ordem?: "asc" | "desc";
@@ -87,8 +89,8 @@ export class FormRepositoryPrisma implements FormRepository {
     const {
       nome,
       schema_version,
-      page,
-      pageSize,
+      pagina,
+      tamanho_pagina,
       incluirInativos,
       ordenarPor,
       ordem,
@@ -100,8 +102,8 @@ export class FormRepositoryPrisma implements FormRepository {
         schema_version,
         is_ativo: incluirInativos ? undefined : true,
       },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      skip: (pagina - 1) * tamanho_pagina,
+      take: tamanho_pagina,
       orderBy: ordenarPor ? { [ordenarPor]: ordem || "asc" } : undefined,
     });
     return forms.map(this.convertPrismaFormToForm);
@@ -149,20 +151,21 @@ export class FormRepositoryPrisma implements FormRepository {
   async listResponses(
     formId: string,
     params: {
-      page: number;
-      pageSize: number;
+      pagina: number;
+      tamanho_pagina: number;
       filters?: Record<string, unknown>;
     }
   ): Promise<Response[]> {
-    const { page, pageSize, filters } = params;
+    const { pagina, tamanho_pagina, filters } = params;
     const responses = await this.prisma.response.findMany({
       where: {
         formId,
+        id: filters?.id as string | undefined,
         schema_version: filters?.schema_version as number | undefined,
-        is_ativo: filters?.incluir_calculados ? undefined : true,
+        is_ativo: filters?.incluir_inativos === true ? undefined : true,
       },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      skip: (pagina - 1) * tamanho_pagina,
+      take: tamanho_pagina,
     });
     return responses.map(this.convertPrismaResponseToResponse);
   }

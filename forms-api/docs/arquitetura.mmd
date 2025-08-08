@@ -1,11 +1,31 @@
+---
+title: Diagrama de Arquitetura Geral
+---
+```mermaid
 graph TD
-    A[Frontend] -->|HTTP| B[API REST]
-    B --> C[FormController]
-    C --> D[FormService]
-    D --> E[FormRepository]
-    D --> F[Calculator]
-    D --> G[FieldValidator]
-    E --> H[(PostgreSQL)]
-    F --> I[mathjs]
-    G --> J[Zod]
-    C --> K[Swagger]
+    A[Frontend] -->|Requisição HTTP| B(API REST - FormController)
+    B -->|Lógica de Negócio| C(Form Service)
+    C -->|Acesso a Dados| D(Form Repository)
+    D -->|Queries SQL| E[Banco de Dados - PostgreSQL]
+    B -->|Logs| F[Serviço de Logs - Winston]
+    C -->|Verifica Dependências| G(Graph - Validador de Dependências)
+    C -->|Calcula Fórmulas| H(Calculator - Engine de Cálculo)
+
+---
+title: Diagrama de Fluxo da Engine de Cálculo
+---
+```mermaid
+graph TD
+    A[Requisição de Resposta - POST /respostas] --> B{Formulário possui campos calculados?}
+    B -- Não --> C[Valida e Salva Respostas]
+    B -- Sim --> D[Obtém o Schema do Formulário]
+    D --> E[Identifica Campos Calculados e suas Fórmulas]
+    E --> F[Cria Grafo de Dependências com 'Graph.ts']
+    F --> G[Verifica Dependências Circulares]
+    G -- Erro --> H[Retorna Erro de Dependência Circular]
+    G -- OK --> I[Aplica Ordenação Topológica]
+    I --> J[Itera sobre os Campos Calculados na Ordem Correta]
+    J --> K[Avalia a Fórmula com 'mathjs']
+    K --> L[Atribui o Valor Calculado à Resposta]
+    L --> M[Salva a Resposta Completa no Banco de Dados]
+    M --> N[Retorna Resposta Salva]

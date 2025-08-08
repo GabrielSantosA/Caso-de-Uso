@@ -6,29 +6,34 @@ datasource db {
   provider = "postgresql" 
   url      = env("DATABASE_URL")
 }
+
 model Form {
-  id            String   @id
-  nome          String
-  descricao     String?
-  schema_version Int
-  is_ativo      Boolean
-  data_criacao  DateTime
-  data_remocao  DateTime?
+  id              String    @id @default(uuid())
+  nome            String
+  descricao       String?
+  schema_version  Int       @default(1)
+  is_ativo        Boolean   @default(true)
+  data_criacao    DateTime  @default(now())
+  data_remocao    DateTime?
   usuario_remocao String?
-  protegido     Boolean
-  campos        Json
-  responses     Response[]
+  protegido       Boolean   @default(false)
+  campos          Json
+  responses       Response[]
+
+  @@map("forms") 
 }
 
 model Response {
-  id            String   @id
-  formId        String
-  schema_version Int
-  respostas     Json
-  calculados    Json
-  criado_em     DateTime
-  is_ativo      Boolean
-  data_remocao  DateTime?
+  id              String    @id @default(uuid())
+  formId          String
+  schema_version  Int       @default(1)
+  respostas       Json
+  calculados      Json
+  criado_em       DateTime  @default(now())
+  is_ativo        Boolean   @default(true)
+  data_remocao    DateTime?
   usuario_remocao String?
-  form          Form     @relation(fields: [formId], references: [id])
+  form            Form      @relation(fields: [formId], references: [id])
+
+  @@map("responses") 
 }

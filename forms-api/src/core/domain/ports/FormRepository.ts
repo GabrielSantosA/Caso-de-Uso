@@ -10,26 +10,34 @@ export interface FormRepository {
   ): Promise<Response | null>;
   create(form: Form): Promise<Form>;
   findById(id: string): Promise<Form | null>;
+
   list(params: {
     nome?: string;
     schema_version?: number;
-    page: number;
-    pageSize: number;
+    pagina: number;
+    tamanho_pagina: number;
     incluirInativos?: boolean;
     ordenarPor?: string;
     ordem?: "asc" | "desc";
   }): Promise<Form[]>;
+
   softDelete(id: string, user: string): Promise<void>;
   updateSchema(id: string, form: Partial<Form>): Promise<Form>;
   saveResponse(formId: string, response: Response): Promise<Response>;
+
   listResponses(
     formId: string,
     params: {
-      page: number;
-      pageSize: number;
-      filters?: Record<string, unknown>;
+      pagina: number;
+      tamanho_pagina: number;
+      filters?: {
+        id?: string;
+        schema_version?: number;
+        incluir_inativos?: boolean;
+      };
     }
   ): Promise<Response[]>;
+
   softDeleteResponse(
     formId: string,
     responseId: string,

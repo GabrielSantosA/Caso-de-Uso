@@ -1,20 +1,35 @@
-version: "3.8"
 services:
-  app:
-    build: .
-    ports:
-      - "3010:3010"
-    depends_on:
-      - db
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5442/forms
   db:
-    image: postgres:16-alpine
+    image: postgres:16.9-alpine
+    restart: always
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=forms
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: forms
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: "no"
+    ports:
+      - "3010:3010"
+    env_file:
+      - .env
+    volumes:
+      - .:/caso-de-uso
+      - app_node_modules:/caso-de-uso/node_modules # Adicione esta linha
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   postgres_data:
+  app_node_modules: # Adicione este volume nomeado

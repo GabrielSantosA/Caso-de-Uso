@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable indent */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { z } from "zod";
 import { ValidatorStrategy } from "../../infra/adapters/validators/Validator";
 import { Field } from "../entities/Form";

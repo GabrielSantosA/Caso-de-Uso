@@ -1,445 +1,632 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable indent */
 import { Request, Response } from "express";
+import { inject, injectable } from "tsyringe";
 import { z } from "zod";
 import { FormService } from "../../../app/use-cases/FormService";
+import { Form } from "../../../domain/entities/Form";
 
+@injectable()
 export class FormController {
-  constructor(private formService: FormService) {}
+  constructor(
+    @inject("FormService") private readonly formService: FormService
+  ) {}
 
-  async create(req: Request, res: Response) {
-    const schema = z.object({
-      nome: z.string().max(255),
-      descricao: z.string().max(500).optional(),
-      campos: z
-        .array(
-          z.object({
-            id: z.string().regex(/^[a-z0-9_]+$/),
-            label: z.string(),
-            tipo: z.enum([
-              "text",
-              "number",
-              "boolean",
-              "select",
-              "date",
-              "calculated",
-            ]),
-            obrigatorio: z.boolean().optional(),
-            condicional: z.string().optional(),
-            validacoes: z
-              .array(
-                z.object({
-                  tipo: z.string(),
-                  valor: z.any().optional(),
-                  mensagem: z.string().optional(),
-                })
-              )
-              .optional(),
-            formula: z.string().optional(),
-            dependencias: z.array(z.string()).optional(),
-            precisao: z.number().optional(),
-            formato: z.enum(["inteiro", "decimal"]).optional(),
-            multipla: z.boolean().optional(),
-            opcoes: z
-              .array(z.object({ label: z.string(), value: z.string() }))
-              .optional(),
-            minima: z.string().optional(),
-            maxima: z.string().optional(),
-          })
-        )
-        .min(1)
-        .max(100),
+  private readonly idSchema = z
+    .string()
+    .regex(/^[a-z0-9_-]+$/i)
+    .min(1)
+    .max(50);
+
+  private readonly fieldSchema = z.object({
+    id: this.idSchema,
+    label: z.string().min(1).max(100),
+    tipo: z.enum(["text", "number", "boolean", "select", "date", "calculated"]),
+    obrigatorio: z.boolean().optional(),
+    condicional: z.string().optional(),
+    validacoes: z
+      .array(
+        z.object({
+          tipo: z.string().min(1),
+          valor: z.any().optional(),
+          mensagem: z.string().optional(),
+        })
+      )
+      .optional(),
+    formula: z.string().optional(),
+    dependencias: z.array(this.idSchema).optional(),
+    precisao: z.number().int().min(0).max(10).optional(),
+    formato: z.enum(["inteiro", "decimal"]).optional(),
+    multipla: z.boolean().optional(),
+    opcoes: z
+      .array(
+        z.object({
+          label: z.string().min(1),
+          value: z.string().min(1),
+        })
+      )
+      .optional(),
+    minima: z.string().optional(),
+    maxima: z.string().optional(),
+  });
+
+  private readonly formSchema = z.object({
+    nome: z.string().min(1).max(100),
+    descricao: z.string().max(500).optional(),
+    protegido: z.boolean().optional(),
+    campos: z.array(this.fieldSchema).min(1).max(100),
+  });
+
+  private readonly paginationSchema = z.object({
+    pagina: z.preprocess(
+      (val) => Number(val),
+      z.number().int().min(1).default(1)
+    ),
+    tamanho_pagina: z.preprocess(
+      (val) => Number(val),
+      z.number().int().min(1).max(100).default(20)
+    ),
+  });
+
+  private handleError(
+    res: Response,
+    error: unknown,
+    defaultMessage: string,
+    statusCode = 400
+  ) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === "string"
+        ? error
+        : defaultMessage;
+
+    res.status(statusCode).json({
+      success: false,
+      error: message,
+      timestamp: new Date().toISOString(),
     });
+  }
 
+  /**
+   * @swagger
+   * /formularios:
+   *   post:
+   *     summary: Cria um novo formulário
+   *     tags: [Formulários]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             $ref: '#/components/schemas/Form'
+   *     responses:
+   *       201:
+   *         description: Formulário criado com sucesso
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Form'
+   *       400:
+   *         description: Erro de validação
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   *       500:
+   *         description: Erro interno
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
+  async create(req: Request, res: Response) {
     try {
-      const data = await schema.parseAsync(req.body);
-      const form = await this.formService.createForm(data as any);
+      const validatedData = await this.formSchema.parseAsync(req.body);
+      const form = await this.formService.criarFormulario(
+        validatedData as Form
+      );
+
       res.status(201).json({
-        id: form.id,
-        schema_version: form.schema_version,
-        mensagem: "Formulário criado com sucesso",
-        criado_em: form.data_criacao.toISOString(),
+        success: true,
+        data: {
+          id: form.id,
+          nome: form.nome,
+          schema_version: form.schema_version,
+          criado_em: form.data_criacao.toISOString(),
+        },
       });
     } catch (error) {
-      let errorMessage = "Erro ao criar formulário";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === "string") {
-        errorMessage = error;
-      }
-      res
-        .status(400)
-        .json({ erro: "payload_invalido", mensagem: errorMessage });
+      this.handleError(res, error, "Erro ao criar formulário");
     }
   }
 
+  /**
+   * @swagger
+   * /formularios:
+   *   get:
+   *     summary: Lista formulários com paginação
+   *     tags: [Formulários]
+   *     parameters:
+   *       - $ref: '#/components/parameters/pagina'
+   *       - $ref: '#/components/parameters/tamanho_pagina'
+   *       - $ref: '#/components/parameters/nome'
+   *       - $ref: '#/components/parameters/schema_version'
+   *     responses:
+   *       200:
+   *         description: Lista de formulários
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/FormListResponse'
+   *       400:
+   *         description: Parâmetros inválidos
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
   async list(req: Request, res: Response) {
-    const schema = z.object({
-      nome: z.string().optional(),
-      schema_version: z.number().int().optional(),
-      pagina: z.number().int().min(1).default(1),
-      tamanho_pagina: z.number().int().min(1).max(100).default(20),
-      ordenar_por: z.enum(["nome", "criado_em"]).optional(),
-      ordem: z.enum(["asc", "desc"]).default("asc"),
-      incluir_inativos: z.enum(["true", "false"]).default("false"),
-    });
-
     try {
-      const {
-        nome,
-        schema_version,
+      const { pagina, tamanho_pagina } = await this.paginationSchema.parseAsync(
+        req.query
+      );
+      const filters = {
+        nome: z.string().optional().parse(req.query.nome),
+        schema_version: z
+          .number()
+          .int()
+          .optional()
+          .parse(req.query.schema_version),
+        incluirInativos: z
+          .enum(["true", "false"])
+          .transform((val) => val === "true")
+          .optional()
+          .parse(req.query.incluir_inativos),
+      };
+
+      const forms = await this.formService.listarFormularios({
         pagina,
         tamanho_pagina,
-        ordenar_por,
-        ordem,
-        incluir_inativos,
-      } = await schema.parseAsync(req.query);
-
-      const forms = await this.formService.listForms({
-        nome,
-        schema_version,
-        page: pagina,
-        pageSize: tamanho_pagina,
-        incluirInativos: incluir_inativos === "true",
-        ordenarPor: ordenar_por,
-        ordem,
+        ...filters,
       });
 
-      const total = forms.length;
       res.status(200).json({
-        pagina_atual: pagina,
-        total_paginas: Math.ceil(total / tamanho_pagina),
-        total_itens: total,
-        formularios: forms.map(
-          (form: {
-            id: any;
-            nome: any;
-            schema_version: any;
-            data_criacao: { toISOString: () => any };
-          }) => ({
+        success: true,
+        data: {
+          pagina,
+          tamanho_pagina,
+          total: forms.length,
+          resultados: forms.map((form) => ({
             id: form.id,
             nome: form.nome,
             schema_version: form.schema_version,
             criado_em: form.data_criacao.toISOString(),
-          })
-        ),
+            is_ativo: form.is_ativo,
+          })),
+        },
       });
     } catch (error) {
-      let errorMessage = "Parâmetros inválidos";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === "string") {
-        errorMessage = error;
-      }
-      res
-        .status(400)
-        .json({ erro: "parametro_invalido", mensagem: errorMessage });
+      this.handleError(res, error, "Erro ao listar formulários");
     }
   }
 
+  /**
+   * @swagger
+   * /formularios/{id}:
+   *   get:
+   *     summary: Obtém um formulário por ID
+   *     tags: [Formulários]
+   *     parameters:
+   *       - $ref: '#/components/parameters/id'
+   *     responses:
+   *       200:
+   *         description: Dados do formulário
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Form'
+   *       404:
+   *         description: Formulário não encontrado
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
   async getById(req: Request, res: Response) {
-    const schema = z.object({
-      id: z.string().regex(/^[a-z0-9_]+$/),
-    });
-
     try {
-      const { id } = await schema.parseAsync(req.params);
-      const form = await this.formService.getFormById(id);
+      const { id } = await z
+        .object({ id: this.idSchema })
+        .parseAsync(req.params);
+      const form = await this.formService.obterFormularioPorId(id);
+
       if (!form) {
         return res.status(404).json({
-          erro: "formulario_nao_encontrado",
-          mensagem: `O formulário com id '${id}' não foi localizado ou está inativo.`,
+          success: false,
+          error: "Formulário não encontrado",
         });
       }
+
       res.status(200).json({
-        id: form.id,
-        nome: form.nome,
-        descricao: form.descricao,
-        schema_version: form.schema_version,
-        criado_em: form.data_criacao.toISOString(),
-        campos: form.campos,
-        is_ativo: form.is_ativo,
-        ...(form.is_ativo === false && {
-          mensagem: `Este formulário foi removido em ${form.data_remocao?.toISOString()} por ${
-            form.usuario_remocao
-          }.`,
-        }),
+        success: true,
+        data: {
+          ...form,
+          data_criacao: form.data_criacao.toISOString(),
+          data_remocao: form.data_remocao?.toISOString(),
+        },
       });
     } catch (error) {
-      let errorMessage = "ID inválido";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === "string") {
-        errorMessage = error;
-      }
-      res.status(422).json({ erro: "id_invalido", mensagem: errorMessage });
+      this.handleError(res, error, "Erro ao buscar formulário");
     }
   }
 
+  /**
+   * @swagger
+   * /formularios/{id}:
+   *   delete:
+   *     summary: Desativa um formulário
+   *     tags: [Formulários]
+   *     parameters:
+   *       - $ref: '#/components/parameters/id'
+   *     responses:
+   *       200:
+   *         description: Formulário desativado
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *       404:
+   *         description: Formulário não encontrado
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   *       403:
+   *         description: Formulário protegido
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
   async softDelete(req: Request, res: Response) {
-    const schema = z.object({
-      id: z.string().regex(/^[a-z0-9_]+$/),
-    });
-
     try {
-      const { id } = await schema.parseAsync(req.params);
-      const form = await this.formService.getFormById(id);
+      const { id } = await z
+        .object({ id: this.idSchema })
+        .parseAsync(req.params);
+      const form = await this.formService.obterFormularioPorId(id);
+
       if (!form) {
         return res.status(404).json({
-          erro: "formulario_nao_encontrado",
-          mensagem: `Nenhum formulário com ID '${id}' foi encontrado.`,
+          success: false,
+          error: "Formulário não encontrado",
         });
       }
+
       if (form.protegido) {
-        return res.status(409).json({
-          erro: "formulario_protegido",
-          mensagem:
-            "Este formulário é protegido e não pode ser removido manualmente.",
+        return res.status(403).json({
+          success: false,
+          error: "Formulário protegido não pode ser removido",
         });
       }
-      if (!form.is_ativo) {
-        return res.status(200).json({
-          mensagem: `Formulário '${id}' já está removido.`,
-          status: "soft_deleted",
-        });
-      }
-      await this.formService.softDelete(id, "usuario_admin");
-      res.status(200).json({
-        mensagem: `Formulário '${id}' marcado como removido com sucesso.`,
-        status: "soft_deleted",
-      });
+
+      await this.formService.desativarFormulario(id, "usuario_admin");
+      res.status(200).json({ success: true });
     } catch (error) {
-      res.status(500).json({
-        erro: "falha_remocao_logica",
-        mensagem: "Erro interno ao marcar o formulário como removido.",
-      });
+      this.handleError(res, error, "Erro ao desativar formulário");
     }
   }
 
+  /**
+   * @swagger
+   * /formularios/{id}/schema_version:
+   *   put:
+   *     summary: Atualiza o schema de um formulário
+   *     tags: [Formulários]
+   *     parameters:
+   *       - $ref: '#/components/parameters/id'
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             $ref: '#/components/schemas/Form'
+   *     responses:
+   *       200:
+   *         description: Schema atualizado
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Form'
+   *       400:
+   *         description: Erro de validação
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   *       409:
+   *         description: Conflito na versão do schema
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
   async updateFormSchema(req: Request, res: Response) {
-    const schema = z.object({
-      id: z.string().regex(/^[a-z0-9_]+$/),
-      nome: z.string().max(255).optional(),
-      descricao: z.string().max(500).optional(),
-      campos: z
-        .array(
-          z.object({
-            id: z.string().regex(/^[a-z0-9_]+$/),
-            label: z.string(),
-            tipo: z.enum([
-              "text",
-              "number",
-              "boolean",
-              "select",
-              "date",
-              "calculated",
-            ]),
-            obrigatorio: z.boolean().optional(),
-            condicional: z.string().optional(),
-            validacoes: z
-              .array(
-                z.object({
-                  tipo: z.string(),
-                  valor: z.any().optional(),
-                  mensagem: z.string().optional(),
-                })
-              )
-              .optional(),
-            formula: z.string().optional(),
-            dependencias: z.array(z.string()).optional(),
-            precisao: z.number().optional(),
-            formato: z.enum(["inteiro", "decimal"]).optional(),
-            multipla: z.boolean().optional(),
-            opcoes: z
-              .array(z.object({ label: z.string(), value: z.string() }))
-              .optional(),
-            minima: z.string().optional(),
-            maxima: z.string().optional(),
-          })
-        )
-        .min(1)
-        .max(100)
-        .optional(),
-    });
-
     try {
-      const { id, ...data } = await schema.parseAsync({
-        ...req.params,
-        ...req.body,
-      });
-      const form = await this.formService.updateFormSchema(id, data as any);
+      const { id } = await z
+        .object({ id: this.idSchema })
+        .parseAsync(req.params);
+      const updateData = await this.formSchema.partial().parseAsync(req.body);
+
+      const form = await this.formService.atualizarSchemaFormulario(
+        id,
+        updateData
+      );
+
       res.status(200).json({
-        mensagem: "Versão atualizada com sucesso.",
-        id: form.id,
-        schema_version_anterior: form.schema_version - 1,
-        schema_version_nova: form.schema_version,
-        atualizado_em: new Date().toISOString(),
+        success: true,
+        data: {
+          id: form.id,
+          schema_version: form.schema_version,
+          atualizado_em: new Date().toISOString(),
+        },
       });
     } catch (error) {
-      let errorMessage = "Erro ao atualizar schema";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-        if (error.message.includes("Schema version")) {
-          return res.status(422).json({
-            erro: "schema_version_invalida",
-            mensagem: error.message,
-          });
-        }
-      } else if (typeof error === "string") {
-        errorMessage = error;
-      }
-      res.status(400).json({ erro: "schema_invalido", mensagem: errorMessage });
+      const status =
+        error instanceof Error && error.message.includes("Schema version")
+          ? 409
+          : 400;
+      this.handleError(res, error, "Erro ao atualizar schema", status);
     }
   }
 
+  /**
+   * @swagger
+   * /formularios/{id}/respostas:
+   *   post:
+   *     summary: Submete uma resposta
+   *     tags: [Formulários]
+   *     parameters:
+   *       - $ref: '#/components/parameters/id'
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               schema_version:
+   *                 type: integer
+   *                 description: Versão do schema do formulário
+   *               respostas:
+   *                 type: object
+   *                 additionalProperties: true
+   *                 description: Objeto com as respostas dos campos
+   *     responses:
+   *       201:
+   *         description: Resposta registrada com sucesso
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 id:
+   *                   type: string
+   *                 schema_version:
+   *                   type: integer
+   *                 criado_em:
+   *                   type: string
+   *                   format: date-time
+   *       400:
+   *         description: Erro na validação da resposta
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   *       404:
+   *         description: Formulário não encontrado
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   *       409:
+   *         description: Versão do schema desatualizada
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
   async submitResponse(req: Request, res: Response) {
-    const schema = z.object({
-      id: z.string().regex(/^[a-z0-9_]+$/),
-      schema_version: z.number().int().optional(),
-      respostas: z.record(z.any()),
-    });
-
     try {
-      const { id, schema_version, respostas } = await schema.parseAsync({
-        ...req.params,
-        ...req.body,
-      });
-      const response = await this.formService.submitResponse(
+      const { id } = await z
+        .object({ id: this.idSchema })
+        .parseAsync(req.params);
+      const { schema_version, respostas } = await z
+        .object({
+          schema_version: z.number().int().optional(),
+          respostas: z.record(z.any()),
+        })
+        .parseAsync(req.body);
+
+      const response = await this.formService.enviarResposta(
         id,
         respostas,
         schema_version
       );
+
       res.status(201).json({
-        mensagem: "Resposta registrada com sucesso.",
-        id_resposta: response.id,
-        calculados: response.calculados,
-        executado_em: response.criado_em.toISOString(),
-      });
-    } catch (error) {
-      let errorMessage = "Erro ao enviar resposta";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-        if (error.message.includes("Schema version")) {
-          return res.status(409).json({
-            erro: "schema_desatualizado",
-            mensagem: error.message,
-          });
-        } else if (error.message.includes("Form not found")) {
-          return res.status(404).json({
-            erro: "formulario_nao_encontrado",
-            mensagem: error.message,
-          });
-        }
-      } else if (typeof error === "string") {
-        errorMessage = error;
-      }
-      res
-        .status(400)
-        .json({ erro: "validacao_falhou", mensagem: errorMessage });
-    }
-  }
-
-  async listResponses(req: Request, res: Response) {
-    const schema = z.object({
-      id: z.string().regex(/^[a-z0-9_]+$/),
-      pagina: z.number().int().min(1).default(1),
-      tamanho_pagina: z.number().int().min(1).max(100).default(20),
-      incluir_calculados: z.enum(["true", "false"]).default("true"),
-      schema_version: z.number().int().optional(),
-    });
-
-    try {
-      const { id, pagina, tamanho_pagina, incluir_calculados, schema_version } =
-        await schema.parseAsync({ ...req.params, ...req.query });
-      const responses = await this.formService.listResponses(id, {
-        page: pagina,
-        pageSize: tamanho_pagina,
-        filters: {
-          schema_version,
-          incluir_calculados: incluir_calculados === "true",
+        success: true,
+        data: {
+          id: response.id,
+          schema_version: response.schema_version,
+          criado_em: response.criado_em.toISOString(),
         },
       });
-
-      res.status(200).json({
-        pagina,
-        tamanho_pagina,
-        total: responses.length,
-        resultados: responses.map(
-          (response: {
-            id: any;
-            criado_em: { toISOString: () => any };
-            schema_version: any;
-            respostas: any;
-            calculados: any;
-          }) => ({
-            id_resposta: response.id,
-            criado_em: response.criado_em.toISOString(),
-            schema_version: response.schema_version,
-            respostas: response.respostas,
-            ...(incluir_calculados === "true" && {
-              calculados: response.calculados,
-            }),
-          })
-        ),
-      });
     } catch (error) {
-      let errorMessage = "Parâmetros inválidos";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === "string") {
-        errorMessage = error;
-      }
-      res
-        .status(400)
-        .json({ erro: "parametros_invalidos", mensagem: errorMessage });
+      const status =
+        error instanceof Error && error.message.includes("Schema version")
+          ? 409
+          : error instanceof Error && error.message.includes("não encontrado")
+          ? 404
+          : 400;
+      this.handleError(res, error, "Erro ao enviar resposta", status);
     }
   }
 
-  async softDeleteResponse(req: Request, res: Response) {
-    const schema = z.object({
-      id: z.string().regex(/^[a-z0-9_]+$/),
-      id_resposta: z.string().regex(/^[a-z0-9_]+$/),
-    });
-
+  /**
+   * @swagger
+   * /formularios/{id}/respostas:
+   *   get:
+   *     summary: Lista respostas de um formulário
+   *     tags: [Formulários]
+   *     parameters:
+   *       - $ref: '#/components/parameters/id'
+   *       - $ref: '#/components/parameters/pagina'
+   *       - $ref: '#/components/parameters/tamanho_pagina'
+   *       - $ref: '#/components/parameters/schema_version'
+   *     responses:
+   *       200:
+   *         description: Lista de respostas do formulário
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 pagina:
+   *                   type: number
+   *                 tamanho_pagina:
+   *                   type: number
+   *                 total:
+   *                   type: number
+   *                 resultados:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       id:
+   *                         type: string
+   *                       criado_em:
+   *                         type: string
+   *                         format: date-time
+   *                       schema_version:
+   *                         type: number
+   *       400:
+   *         description: Parâmetros de query inválidos
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   *       404:
+   *         description: Formulário não encontrado
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
+  async listResponses(req: Request, res: Response) {
     try {
-      const { id, id_resposta } = await schema.parseAsync(req.params);
-      const form = await this.formService.getFormById(id);
-      if (!form || !form.is_ativo) {
-        return res.status(403).json({
-          erro: "formulario_inativo",
-          mensagem: "Este formulário foi desativado e não permite alterações.",
-        });
-      }
-      const response = await this.formService.listResponses(id, {
-        page: 1,
-        pageSize: 1,
-        filters: { id: id_resposta },
-      });
-      if (!response.length) {
-        return res.status(404).json({
-          erro: "resposta_nao_encontrada",
-          mensagem: `A resposta '${id_resposta}' não foi localizada.`,
-        });
-      }
-      if (!response[0].is_ativo) {
-        return res.status(410).json({
-          erro: "resposta_ja_removida",
-          mensagem: "A resposta já está inativa.",
-        });
-      }
-      await this.formService.softDeleteResponse(
-        id,
-        id_resposta,
-        "usuario_admin"
+      const { id } = await z
+        .object({ id: this.idSchema })
+        .parseAsync(req.params);
+      const { pagina, tamanho_pagina } = await this.paginationSchema.parseAsync(
+        req.query
       );
+      const filters = {
+        schema_version: z
+          .number()
+          .int()
+          .optional()
+          .parse(req.query.schema_version),
+        incluir_inativos: z
+          .enum(["true", "false"])
+          .transform((val) => val === "true")
+          .optional()
+          .parse(req.query.incluir_inativos),
+      };
+
+      const responses = await this.formService.listarRespostas(id, {
+        pagina,
+        tamanho_pagina,
+        filtros: filters,
+      });
+
       res.status(200).json({
-        mensagem: `Resposta '${id_resposta}' marcada como inativa com sucesso.`,
-        status: "soft_deleted",
+        success: true,
+        data: {
+          pagina,
+          tamanho_pagina,
+          total: responses.length,
+          resultados: responses.map((response) => ({
+            id: response.id,
+            schema_version: response.schema_version,
+            criado_em: response.criado_em.toISOString(),
+            is_ativo: response.is_ativo,
+          })),
+        },
       });
     } catch (error) {
-      res.status(500).json({
-        erro: "falha_remocao_logica",
-        mensagem: "Erro interno ao marcar a resposta como removida.",
-      });
+      const status =
+        error instanceof Error && error.message.includes("não encontrado")
+          ? 404
+          : 400;
+      this.handleError(res, error, "Erro ao listar respostas", status);
+    }
+  }
+
+  /**
+   * @swagger
+   * /formularios/{id}/respostas/{respostaId}:
+   *   delete:
+   *     summary: Remove uma resposta específica de um formulário (soft delete)
+   *     tags: [Formulários]
+   *     parameters:
+   *       - $ref: '#/components/parameters/id'
+   *       - $ref: '#/components/parameters/respostaId'
+   *     responses:
+   *       200:
+   *         description: Resposta marcada como inativa com sucesso
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *       404:
+   *         description: Resposta não encontrada
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   *       410:
+   *         description: Resposta já está inativa
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   */
+  async softDeleteResponse(req: Request, res: Response) {
+    try {
+      const { id, respostaId } = await z
+        .object({
+          id: this.idSchema,
+          respostaId: this.idSchema,
+        })
+        .parseAsync(req.params);
+
+      await this.formService.desativarResposta(id, respostaId, "usuario_admin");
+      res.status(200).json({ success: true });
+    } catch (error) {
+      const status =
+        error instanceof Error && error.message.includes("inativa")
+          ? 410
+          : error instanceof Error && error.message.includes("não encontrada")
+          ? 404
+          : 400;
+      this.handleError(res, error, "Erro ao desativar resposta", status);
     }
   }
 }

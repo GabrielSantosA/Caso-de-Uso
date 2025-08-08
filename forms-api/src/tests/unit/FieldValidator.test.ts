@@ -5,7 +5,7 @@ import { FieldValidator } from "../../core/domain/ports/FieldValidator";
 describe("FieldValidator", () => {
   const validator = new FieldValidator();
 
-  it("should validate text field with required and regex validations", async () => {
+  it("deve validar campo de texto com obrigatoriedade e regex", async () => {
     const field: Field = {
       id: "name",
       label: "Name",
@@ -19,7 +19,7 @@ describe("FieldValidator", () => {
         },
         {
           tipo: "regex",
-          valor: "^[A-Z]",
+          valor: /^[A-Z].*/,
           mensagem: "Deve começar com letra maiúscula",
         },
       ],
@@ -39,7 +39,7 @@ describe("FieldValidator", () => {
     );
   });
 
-  it("should validate optional text field", async () => {
+  it("deve validar campo de texto opcional", async () => {
     const field: Field = {
       id: "name",
       label: "Name",
@@ -63,7 +63,7 @@ describe("FieldValidator", () => {
     );
   });
 
-  it("should validate number field", async () => {
+  it("deve validar campo numérico", async () => {
     const field: Field = {
       id: "age",
       label: "Age",
@@ -84,11 +84,11 @@ describe("FieldValidator", () => {
       "Idade máxima é 65"
     );
     await expect(validator.validate(30.5, field)).rejects.toThrow(
-      "Expected integer"
+      "Esperado um número inteiro"
     );
   });
 
-  it("should validate boolean field", async () => {
+  it("deve validar campo booleano", async () => {
     const field: Field = {
       id: "active",
       label: "Active",
@@ -102,46 +102,46 @@ describe("FieldValidator", () => {
     );
   });
 
-  it("should validate date field with range", async () => {
+  it("deve validar campo de data com intervalo", async () => {
     const field: Field = {
       id: "birthdate",
       label: "Birthdate",
       tipo: "date",
       obrigatorio: true,
-      minima: "2000-01-01T00:00:00Z",
-      maxima: "2025-12-31T23:59:59Z",
+      minima: "2000-01-01T00:00:00.000Z",
+      maxima: "2025-12-31T23:59:59.000Z",
     };
 
     await expect(
-      validator.validate("2020-01-01T00:00:00Z", field)
+      validator.validate("2020-01-01T00:00:00.000Z", field)
     ).resolves.toBeUndefined();
     await expect(
-      validator.validate("1999-12-31T23:59:59Z", field)
-    ).rejects.toThrow("Data deve ser após 2000-01-01T00:00:00Z");
+      validator.validate("1999-12-31T23:59:59.000Z", field)
+    ).rejects.toThrow("Data deve ser após 2000-01-01T00:00:00.000Z");
     await expect(
-      validator.validate("2026-01-01T00:00:00Z", field)
-    ).rejects.toThrow("Data deve ser antes 2025-12-31T23:59:59Z");
+      validator.validate("2026-01-01T00:00:00.000Z", field)
+    ).rejects.toThrow("Data deve ser antes 2025-12-31T23:59:59.000Z");
   });
 
-  it("should validate optional date field", async () => {
+  it("deve validar campo de data opcional", async () => {
     const field: Field = {
       id: "birthdate",
       label: "Birthdate",
       tipo: "date",
       obrigatorio: false,
-      minima: "2000-01-01T00:00:00Z",
+      minima: "2000-01-01T00:00:00.000Z",
     };
 
     await expect(validator.validate(undefined, field)).resolves.toBeUndefined();
     await expect(
-      validator.validate("2020-01-01T00:00:00Z", field)
+      validator.validate("2020-01-01T00:00:00.000Z", field)
     ).resolves.toBeUndefined();
     await expect(
-      validator.validate("1999-12-31T23:59:59Z", field)
-    ).rejects.toThrow("Data deve ser após 2000-01-01T00:00:00Z");
+      validator.validate("1999-12-31T23:59:59.000Z", field)
+    ).rejects.toThrow("Data deve ser após 2000-01-01T00:00:00.000Z");
   });
 
-  it("should validate single select field", async () => {
+  it("deve validar campo de seleção única", async () => {
     const field: Field = {
       id: "sexo",
       label: "Sexo",
@@ -160,11 +160,11 @@ describe("FieldValidator", () => {
       "Opção inválida"
     );
     await expect(validator.validate(undefined, field)).rejects.toThrow(
-      "Expected string, received undefined"
+      "Esperado string, recebido indefinido"
     );
   });
 
-  it("should validate multiple select field", async () => {
+  it("deve validar campo de seleção múltipla", async () => {
     const field: Field = {
       id: "hobbies",
       label: "Hobbies",
@@ -183,10 +183,13 @@ describe("FieldValidator", () => {
     await expect(
       validator.validate(["reading", "invalid"], field)
     ).rejects.toThrow("Opção inválida");
-    await expect(validator.validate([], field)).resolves.toBeUndefined();
+
+    await expect(validator.validate([], field)).rejects.toThrow(
+      "Array deve conter pelo menos 1 elemento(s)"
+    );
   });
 
-  it("should validate calculated field", async () => {
+  it("deve validar campo calculado", async () => {
     const field: Field = {
       id: "imc",
       label: "IMC",
@@ -205,11 +208,11 @@ describe("FieldValidator", () => {
       tipo: "calculated",
     };
     await expect(validator.validate(undefined, invalidField)).rejects.toThrow(
-      "campo calculado deve ter formula e dependencias"
+      "Campo calculado deve ter formula e dependencias"
     );
   });
 
-  it("should throw for unsupported field type", async () => {
+  it("deve lançar erro para tipo de campo não suportado", async () => {
     const field: Field = {
       id: "invalid",
       label: "Invalid",
