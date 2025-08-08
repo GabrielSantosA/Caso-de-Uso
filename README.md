@@ -25,10 +25,7 @@ cp .env.example .env
 # 3. Inicie os containers
 docker-compose up -d --build
 
-# 4. Execute o seed
-docker-compose exec app npx ts-node src/seed.ts
-
-# 5. Acessando a aplicação
+# 4. Acessando a aplicação
 A aplicação estará disponível em http://localhost:3010.
 
 A documentação interativa da API, gerada com Swagger UI, pode ser acessada em http://localhost:3010/api-docs.

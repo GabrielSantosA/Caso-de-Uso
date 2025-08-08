@@ -25,11 +25,10 @@ services:
       - .env
     volumes:
       - .:/caso-de-uso
-      - app_node_modules:/caso-de-uso/node_modules # Adicione esta linha
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   postgres_data:
-  app_node_modules: # Adicione este volume nomeado
+  app_node_modules:
