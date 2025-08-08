@@ -28,4 +28,7 @@ docker-compose up -d --build
 A aplicação estará disponível em http://localhost:3010.
 
 A documentação interativa da API, gerada com Swagger UI, pode ser acessada em http://localhost:3010/api-docs.
+
+# Explicações tecnicas
+As explicações tecnicas estão na pasta Docs
 ```
