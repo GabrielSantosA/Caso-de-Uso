@@ -5,8 +5,8 @@
 Antes de começar, verifique se você possui:
 
 - [Node.js](https://nodejs.org/) 18+ (LTS recomendado)
-- [PostgreSQL](https://www.postgresql.org/) 14+ ou Docker
-- [Docker](https://www.docker.com/) (opcional mas recomendado)
+- [PostgreSQL](https://www.postgresql.org/) 14+
+- [Docker](https://www.docker.com/)
 - [Docker Compose](https://docs.docker.com/compose/) v2+
 - [Git](https://git-scm.com/) (para clonar o repositório)
 
@@ -16,10 +16,9 @@ Antes de começar, verifique se você possui:
 
 ```bash
 # 1. Clone o repositório
-git clone https://github.com/seu-usuario/plataforma-formularios.git
-cd plataforma-formularios
+git clone https://github.com/GabrielSantosA/Caso-de-Uso.git
+cd caso-de-uso
 
-# 2. Configure as variáveis de ambiente (opcional)
 cp .env.example .env
 
 # 3. Inicie os containers
